@@ -4,9 +4,9 @@ channels:
   - nvidia
 dependencies:
   - python >= 3.8
-  - pytorch >= 1.13
+  - pytorch=2.5.1
   - torchvision
-  - pytorch-cuda=11.7
+  - pytorch-cuda=12.4
   - pip:
     - timm
     - diffusers
