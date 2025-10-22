@@ -153,10 +153,28 @@ def main(args):
 
     # Setup optimizer (we used default Adam betas=(0.9, 0.999) and a constant learning rate of 1e-4 in our paper):
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    
+    # Variables for monitoring/logging purposes:
+    train_steps = 0
+    log_steps = 0
+    running_loss = 0
+    start_time = time()
+
+    # Load from checkpoint
+    if args.ckpt:
+        ckpt = torch.load(args.ckpt, weights_only=False)
+        ema.load_state_dict(ckpt["ema"])
+        model.module.load_state_dict(ckpt["model"])
+        opt.load_state_dict(ckpt["opt"])
+        old_args = ckpt["args"]
+        logger.info(f"Loaded training state from {args.ckpt}")
+        training_iter_str = os.path.basename(args.ckpt).split('.')[0]
+        train_steps = int(training_iter_str.lstrip('0'))
+        logger.info(f"Resuming training from iteration {train_steps}")
 
     # Setup data:
     transform = transforms.Compose([
-        # transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
+        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
@@ -184,12 +202,6 @@ def main(args):
     update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
     model.train()  # important! This enables embedding dropout for classifier-free guidance
     ema.eval()  # EMA model should always be in eval mode
-
-    # Variables for monitoring/logging purposes:
-    train_steps = 0
-    log_steps = 0
-    running_loss = 0
-    start_time = time()
 
     logger.info(f"Training for {args.epochs} epochs...")
     for epoch in range(args.epochs):
@@ -265,5 +277,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
+    parser.add_argument("--ckpt", type=str, default=None)
     args = parser.parse_args()
     main(args)
