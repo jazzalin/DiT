@@ -25,11 +25,13 @@ from glob import glob
 from time import time
 import argparse
 import logging
+import yaml
 import os
 
 from models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
+from dataset import Photocastv2Dataset
 
 
 #################################################################################
@@ -173,12 +175,14 @@ def main(args):
         logger.info(f"Resuming training from iteration {train_steps}")
 
     # Setup data:
-    transform = transforms.Compose([
-        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, args.image_size)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
-    ])
-    dataset = ImageFolder(args.data_path, transform=transform)
+    with open(f"config/single_view.yml", "r", encoding="utf-8") as fid:
+        cfg = yaml.safe_load(fid)
+
+    dataset = Photocastv2Dataset(os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train.csv"),
+                                 os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train_pairs.csv"),
+                                 cfg['dataset_path'],
+                                 cfg['img_size']) 
+
     sampler = DistributedSampler(
         dataset,
         num_replicas=dist.get_world_size(),
@@ -206,13 +210,13 @@ def main(args):
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
-        for x, y in loader:
+        for x, _, y1, y2 in loader:
             x = x.to(device)
-            y = y.to(device)
             with torch.no_grad():
                 # Map input images to latent space + normalize latents:
                 x = vae.encode(x).latent_dist.sample().mul_(0.18215)
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
+            y = torch.cat([y1, y2], dim=1).to(device)
             model_kwargs = dict(y=y)
             loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
             loss = loss_dict["loss"].mean()
@@ -277,5 +281,6 @@ if __name__ == "__main__":
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
     parser.add_argument("--ckpt", type=str, default=None)
+    parser.add_argument("--cfg", type=str, default=None)
     args = parser.parse_args()
     main(args)
