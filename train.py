@@ -8,6 +8,8 @@
 A minimal training script for DiT using PyTorch DDP.
 """
 import torch
+import torchvision
+from torchvision.transforms import v2
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -31,7 +33,7 @@ import os
 from models import DiT_models
 from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
-from dataset import Photocastv2Dataset
+from dataset import PhotocastDataset
 
 
 #################################################################################
@@ -177,10 +179,17 @@ def main(args):
         train_steps = int(training_iter_str.lstrip('0'))
         logger.info(f"Resuming training from iteration {train_steps}")
 
-    dataset = Photocastv2Dataset(os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train.csv"),
-                                 os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train_pairs.csv"),
-                                 cfg['dataset_path'],
-                                 cfg['img_size']) 
+    tf = v2.Compose([
+        v2.Resize(cfg['img_size'], interpolation=v2.InterpolationMode.BICUBIC),
+        v2.ToImage(),  
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+    ])
+    dataset = PhotocastDataset(csv_file=os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train.csv"),
+                                pairs_file=os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train_pairs.csv"),
+                                data_root_dir=cfg['dataset_path'],
+                                img_size=cfg['img_size'],
+                                img_transform=tf) 
 
     sampler = DistributedSampler(
         dataset,
