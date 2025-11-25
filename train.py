@@ -115,6 +115,10 @@ def main(args):
     """
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
+    # Setup data:
+    with open(f"config/single_view.yml", "r", encoding="utf-8") as fid:
+        cfg = yaml.safe_load(fid)
+
     # Setup DDP:
     dist.init_process_group("nccl")
     assert args.global_batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
@@ -139,8 +143,7 @@ def main(args):
         logger = create_logger(None)
 
     # Create model:
-    assert args.image_size % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
-    latent_size = args.image_size // 8
+    latent_size = (int(cfg["img_size"][0] / 8), int(cfg["img_size"][1] / 8)) #args.image_size // 8
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes
@@ -173,10 +176,6 @@ def main(args):
         training_iter_str = os.path.basename(args.ckpt).split('.')[0]
         train_steps = int(training_iter_str.lstrip('0'))
         logger.info(f"Resuming training from iteration {train_steps}")
-
-    # Setup data:
-    with open(f"config/single_view.yml", "r", encoding="utf-8") as fid:
-        cfg = yaml.safe_load(fid)
 
     dataset = Photocastv2Dataset(os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train.csv"),
                                  os.path.join(cfg['dataset_path'], "v3", cfg["roundshot"] + "_train_pairs.csv"),
